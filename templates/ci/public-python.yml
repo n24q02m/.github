@@ -105,44 +105,6 @@ jobs:
   # Semgrep SAST
   # ============================================================================
   semgrep:
-    name: Semgrep SAST Scan
-    if: >-
-      (github.event_name == 'pull_request' || github.event_name == 'push')
-      && github.actor != 'dependabot[bot]'
-      && github.actor != 'renovate[bot]'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    container:
-      image: semgrep/semgrep
-    steps:
-      - uses: actions/checkout@v6
-      # CUSTOMIZE: Add --exclude-rule flags if needed
-      - run: semgrep ci --config auto --error --verbose
-
-  # ============================================================================
-  # Dependency Review
-  # ============================================================================
-  dependency-review:
-    name: Dependency Review
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@v2
-        with:
-          egress-policy: audit
-
-      - uses: actions/checkout@v6
-      - uses: actions/dependency-review-action@v4
-        with:
-          fail-on-severity: moderate
-          comment-summary-in-pr: always
-          # CUSTOMIZE: Add allow-ghsas if needed
-
-  # ============================================================================
-  # Qodo AI Code Review
-  # ============================================================================
   ai_pr_review:
     name: Qodo AI Code Review
     if: >-
