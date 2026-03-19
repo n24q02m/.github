@@ -1,0 +1,40 @@
+name: Email Notification
+on:
+  workflow_call:
+    secrets:
+      SMTP_USERNAME:
+        required: true
+      SMTP_PASSWORD:
+        required: true
+      NOTIFY_EMAIL:
+        required: true
+
+jobs:
+  email-notify:
+    name: Email Notification
+    if: >-
+      (github.event_name == 'issues' || github.event_name == 'pull_request_target')
+      && github.actor != 'n24q02m'
+      && github.event.sender.type != 'Bot'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send email notification
+        uses: dawidd6/action-send-mail@v15
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: >-
+            [${{ github.event.repository.name }}]
+            ${{ github.event_name == 'issues' && 'Issue' || 'PR' }}
+            #${{ github.event.issue.number || github.event.pull_request.number }}:
+            ${{ github.event.issue.title || github.event.pull_request.title }}
+          to: ${{ secrets.NOTIFY_EMAIL }}
+          from: GitHub Notify <${{ secrets.SMTP_USERNAME }}>
+          body: |
+            ${{ github.event_name == 'issues' && 'New issue' || 'New pull request' }} in ${{ github.repository }}
+
+            Title: ${{ github.event.issue.title || github.event.pull_request.title }}
+            URL: ${{ github.event.issue.html_url || github.event.pull_request.html_url }}
+            Author: ${{ github.event.sender.login }}

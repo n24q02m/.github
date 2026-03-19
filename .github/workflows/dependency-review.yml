@@ -1,0 +1,20 @@
+name: Dependency Review
+on:
+  workflow_call:
+    inputs:
+      allow-ghsas:
+        description: 'Comma-separated GHSA IDs to allow'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/dependency-review-action@da24556b548a50705dd671f47852072ea4c105d7 # v4
+        with:
+          fail-on-severity: moderate
+          allow-ghsas: ${{ inputs.allow-ghsas }}

@@ -1,0 +1,28 @@
+name: Semgrep SAST
+on:
+  workflow_call:
+    inputs:
+      exclude-rules:
+        description: 'Comma-separated Semgrep rule IDs to exclude'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  semgrep:
+    name: Semgrep SAST
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Run Semgrep
+        run: |
+          EXCLUDE_ARGS=""
+          if [ -n "${{ inputs.exclude-rules }}" ]; then
+            IFS=',' read -ra RULES <<< "${{ inputs.exclude-rules }}"
+            for rule in "${RULES[@]}"; do
+              EXCLUDE_ARGS="$EXCLUDE_ARGS --exclude-rule $rule"
+            done
+          fi
+          semgrep ci --config auto --error --verbose $EXCLUDE_ARGS
