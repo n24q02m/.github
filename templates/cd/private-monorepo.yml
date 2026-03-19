@@ -1,0 +1,174 @@
+# =============================================================================
+# CD Template: Private Monorepo (Aiora, KnowledgePrism, QuikShipping)
+# Source: https://github.com/n24q02m/.github/templates/cd/private-monorepo.yml
+#
+# Strategy:
+#   - Release: ubuntu-latest (PSR v10)
+#   - Deploy API: self-hosted ARM64 (local docker build + compose up)
+#   - Deploy Web: self-hosted ARM64 (Cloudflare Pages)
+#   - NO GHCR push, NO Watchtower, NO multi-arch
+#
+# CUSTOMIZE: Search for "# CUSTOMIZE:" comments and adjust for your repo.
+# =============================================================================
+name: CD
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: "Release type"
+        required: true
+        type: choice
+        options:
+          - beta
+          - stable
+      deploy_api:
+        description: "Force deploy API (skip release)"
+        type: boolean
+        default: false
+      deploy_web:
+        description: "Deploy Web to Cloudflare Pages"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  packages: write
+
+# CUSTOMIZE: Image names
+env:
+  IMAGE_NAME: ghcr.io/n24q02m/YOUR_REPO-api
+  AI_WORKER_IMAGE_NAME: ghcr.io/n24q02m/YOUR_REPO-ai-worker
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # ============================================================================
+  # Release: PSR per component (ubuntu-latest)
+  # ============================================================================
+  release:
+    name: Semantic Release
+    runs-on: ubuntu-latest
+    outputs:
+      api-released: ${{ steps.release-api.outputs.released }}
+      api-tag: ${{ steps.release-api.outputs.tag }}
+      api-version: ${{ steps.release-api.outputs.version }}
+      api-is-prerelease: ${{ steps.release-api.outputs.is_prerelease }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GH_PAT }}
+          fetch-depth: 0
+
+      - name: Release API
+        id: release-api
+        uses: python-semantic-release/python-semantic-release@v10
+        with:
+          # CUSTOMIZE: directory if monorepo
+          directory: apps/api
+          github_token: ${{ secrets.GH_PAT }}
+          prerelease: ${{ inputs.release_type == 'beta' }}
+          prerelease_token: beta
+
+      - name: Publish API to GitHub Release
+        uses: python-semantic-release/publish-action@v10
+        if: steps.release-api.outputs.released == 'true'
+        with:
+          directory: apps/api
+          github_token: ${{ secrets.GH_PAT }}
+          tag: ${{ steps.release-api.outputs.tag }}
+
+  # ============================================================================
+  # Deploy API -- Local build + docker compose up (self-hosted VM2)
+  # ============================================================================
+  deploy-api:
+    name: Deploy API
+    runs-on: [self-hosted, linux, arm64]
+    needs: release
+    if: |
+      always() && !cancelled() &&
+      (needs.release.outputs.api-released == 'true' || inputs.deploy_api)
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build API image locally
+        env:
+          TAG: ${{ (needs.release.outputs.api-is-prerelease == 'true' || inputs.release_type == 'beta') && 'staging' || 'latest' }}
+        # CUSTOMIZE: Dockerfile path
+        run: docker build -t ${{ env.IMAGE_NAME }}:$TAG -f apps/api/Dockerfile apps/api
+
+      - name: Deploy via docker compose
+        env:
+          TAG: ${{ (needs.release.outputs.api-is-prerelease == 'true' || inputs.release_type == 'beta') && 'staging' || 'latest' }}
+        run: |
+          # CUSTOMIZE: Service name prefix
+          SERVICE=$([ "$TAG" = "staging" ] && echo "oci-YOUR_APP-api-staging" || echo "oci-YOUR_APP-api")
+          cd /opt/oci-prod
+          make up-$SERVICE
+
+      - name: Verify health
+        env:
+          TAG: ${{ (needs.release.outputs.api-is-prerelease == 'true' || inputs.release_type == 'beta') && 'staging' || 'latest' }}
+        run: |
+          # CUSTOMIZE: Container name
+          SERVICE=$([ "$TAG" = "staging" ] && echo "oci-YOUR_APP-api-staging" || echo "oci-YOUR_APP-api")
+          sleep 15
+          STATUS=$(docker inspect $SERVICE --format '{{.State.Health.Status}}' 2>/dev/null || echo "unknown")
+          echo "Health status: $STATUS"
+          if [ "$STATUS" = "unhealthy" ]; then
+            echo "::error::Container is unhealthy"
+            docker logs $SERVICE --tail 50
+            exit 1
+          fi
+
+  # ============================================================================
+  # CUSTOMIZE: Deploy AI Worker (if applicable)
+  # Same pattern as deploy-api but with different Dockerfile/service name
+  # ============================================================================
+
+  # ============================================================================
+  # Deploy Web to Cloudflare Pages (self-hosted)
+  # ============================================================================
+  deploy-web:
+    name: Deploy Web (${{ inputs.release_type == 'beta' && 'staging' || 'production' }})
+    runs-on: [self-hosted, linux, arm64]
+    if: inputs.deploy_web
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        # CUSTOMIZE: Web app directory
+        working-directory: apps/web
+        run: bun install --frozen-lockfile
+
+      - name: Build (staging)
+        if: inputs.release_type == 'beta'
+        working-directory: apps/web
+        env:
+          # CUSTOMIZE: Build-time env vars
+          PROD_API_URL: ${{ secrets.YOUR_APP_API_URL }}
+        run: |
+          export NEXT_PUBLIC_API_URL=$(echo "$PROD_API_URL" | sed 's|YOUR_APP-api|YOUR_APP-api-staging|')
+          bun run build:staging
+
+      - name: Build (production)
+        if: inputs.release_type != 'beta'
+        working-directory: apps/web
+        env:
+          # CUSTOMIZE: Build-time env vars
+          NEXT_PUBLIC_API_URL: ${{ secrets.YOUR_APP_API_URL }}
+        run: bun run build
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          # CUSTOMIZE: CF API token secret name and project name
+          apiToken: ${{ secrets.YOUR_APP_CF_PAGES_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
+          command: pages deploy apps/web/out --project-name=YOUR_APP-web --branch=${{ inputs.release_type == 'beta' && 'staging' || 'main' }}
