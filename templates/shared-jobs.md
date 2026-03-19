@@ -1,58 +1,61 @@
 # Shared Job Patterns
 
-Reference cho cac job chung giua tat ca repos. Moi job duoc inline trong ci.yml/cd.yml — KHONG dung reusable workflows.
+Reference for common jobs shared across all repos. Every job is inlined in ci.yml/cd.yml -- NO reusable workflows.
 
 ## CI Jobs
 
 ### PR Title Check
 
-- **Trigger**: `pull_request_target` (public repos dung `pull_request` cua no) + `sender.type != 'Bot'`
+- **Trigger**: `pull_request` for private repos, `pull_request_target` for public repos (fork PRs need secrets access) + `sender.type != 'Bot'`
 - **Runner**: `ubuntu-latest` (with harden-runner)
 - **Permissions**: `pull-requests: write`
-- **Logic**: Validate Conventional Commits (feat/fix only). Auto-fix bot PR titles (strip Bolt/Sentinel/Guard/Shield/Palette prefix). `chore(release):` exempt cho PSR.
+- **Logic**: Validate Conventional Commits (feat/fix only). Auto-fix bot PR titles (strip Bolt/Sentinel/Guard/Shield/Palette prefix). `chore(release):` exempt for PSR.
 
 ### Semgrep SAST Scan
 
-- **Trigger**: `pull_request` hoac `push`, skip Dependabot/Renovate
-- **Runner**: `ubuntu-latest` (container: `semgrep/semgrep`)
+- **Trigger**: `pull_request` or `push`, skip Dependabot/Renovate
+- **Runner**: `ubuntu-latest` (container: `semgrep/semgrep`) -- NO harden-runner (container job)
 - **Permissions**: `contents: read`
-- **Config**: `semgrep ci --config auto --error --verbose`
-- **Customization**: `--exclude-rule <rule-id>` cho false positives (vd: Go signedness cast)
+- **Config**: `semgrep scan --config auto --error --verbose`
+- **Customization**: `--exclude-rule <rule-id>` for false positives (e.g., Go signedness cast)
 
 ### Qodo AI Code Review
 
-- **Trigger**: `issue_comment` (non-bot) OR `pull_request_target` (non-bot, non-owner)
+- **Trigger**: `issue_comment` (non-bot) OR `pull_request` (private repos) / `pull_request_target` (public repos) (non-bot, non-owner)
 - **Runner**: `ubuntu-latest`
 - **Permissions**: `issues: write`, `pull-requests: write`, `contents: read`
-- **Config**: Auto review + describe + improve. Custom instructions tu `.github/best_practices.md`.
+- **Config**: Auto review + describe + improve. Custom instructions from `.github/best_practices.md`.
 - **Secrets**: `GEMINI_API_KEY`
+- **Note**: `HANDLE_PR_ACTIONS` removed for private repos (not needed). Public repos keep it for `pull_request_target` filtering.
 
 ### Dependency Review
 
 - **Trigger**: `pull_request` only
 - **Runner**: `ubuntu-latest` (with harden-runner)
-- **Private repos**: PHAI co `continue-on-error: true` (GitHub Advanced Security required)
+- **Private repos**: `continue-on-error: true` at **step level** on the `dependency-review-action` step (GitHub Advanced Security required for full functionality)
+- **Public repos**: No `continue-on-error` needed
 - **Config**: `fail-on-severity: moderate`, `comment-summary-in-pr: always`
-- **Customization**: `allow-ghsas` cho known false positives
+- **Customization**: `allow-ghsas` for known false positives
 
 ### Email Notification
 
-- **Trigger**: `issues` hoac `pull_request_target`, skip owner + bots
+- **Trigger**: `issues` or `pull_request` (private repos) / `pull_request_target` (public repos), skip owner + bots
 - **Runner**: `ubuntu-latest` (with harden-runner)
 - **Secrets**: `SMTP_USERNAME`, `SMTP_PASSWORD`, `NOTIFY_EMAIL`
-- **Config**: Gmail SMTP (App Password, khong phai password thuong)
+- **Action**: `dawidd6/action-send-mail@v3` (private repos), `@v15` (public repos)
+- **Config**: Gmail SMTP (App Password, not regular password)
 
 ### Codecov Coverage Upload
 
-- **Trigger**: `push` to main only (khong upload tren PRs)
-- **Self-hosted ARM64**: PHAI co `os: linux-arm64` parameter
-- **GitHub-hosted**: Khong can `os` parameter
+- **Trigger**: `push` to main only (no uploads on PRs)
+- **Self-hosted ARM64**: MUST include `os: linux-arm64` parameter
+- **GitHub-hosted**: No `os` parameter needed
 
 ## CD Jobs
 
 ### Semantic Release (PSR v10)
 
-- **Runner**: Luon `ubuntu-latest`
+- **Runner**: Always `ubuntu-latest`
 - **Token**: `secrets.GH_PAT` (admin token, bypass branch rulesets)
 - **Concurrency**: `cancel-in-progress: false`
 - **Outputs**: `released`, `tag`, `version`, `is_prerelease`
@@ -68,25 +71,28 @@ Reference cho cac job chung giua tat ca repos. Moi job duoc inline trong ci.yml/
 
 - **Runner**: `[self-hosted, linux, arm64]`
 - **Pattern**: `docker build` locally -> `docker compose up` -> health check
-- **Tag**: `latest` (stable) hoac `staging` (beta)
+- **Tag**: `latest` (stable) or `staging` (beta)
 - **NO GHCR push, NO Watchtower**
 
 ### MCP Registry Publish
 
 - **Trigger**: Stable releases only (`is_prerelease != 'true'`)
-- **Auth**: GitHub OIDC (`id-token: write`), khong can secrets
-- **Prerequisite**: PyPI/npm + Docker phai xong truoc
+- **Auth**: GitHub OIDC (`id-token: write`), no secrets needed
+- **Prerequisite**: PyPI/npm + Docker must complete first
 
 ## Key Differences: Private vs Public
 
 | Aspect | Private (Aiora, KP, QShip) | Public (MCP servers, libs) |
 |--------|---------------------------|---------------------------|
 | Lint/Test runner | `[self-hosted, linux, arm64]` | `ubuntu-latest` |
-| harden-runner | NO (self-hosted) | YES (all jobs) |
+| harden-runner | NO (self-hosted) | YES (all jobs except Semgrep container) |
 | Codecov os | `linux-arm64` | (default) |
 | Docker build | Local, single-arch ARM64 | Multi-arch amd64+arm64 |
 | Deploy | `docker compose up` on VM2 | GHCR + DockerHub + Watchtower |
-| dependency-review | `continue-on-error: true` | No flag needed |
+| dependency-review | `continue-on-error: true` (step level) | No flag needed |
+| PR event trigger | `pull_request` | `pull_request_target` (fork PR secrets) |
+| Semgrep | Container job, no harden-runner | Container job, no harden-runner |
+| Email action | `action-send-mail@v3` | `action-send-mail@v15` |
 
 ## Secrets Required
 

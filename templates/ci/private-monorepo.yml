@@ -4,7 +4,9 @@
 #
 # Runner strategy:
 #   - Lint/Test/Build: self-hosted ARM64 on OCI VM2 (NO harden-runner)
-#   - PR Title/Semgrep/Qodo/Email/Dep Review: ubuntu-latest (with harden-runner)
+#   - PR Title/Dep Review/Email: ubuntu-latest (with harden-runner)
+#   - Semgrep: ubuntu-latest (container: semgrep/semgrep, NO harden-runner)
+#   - Qodo AI Review: ubuntu-latest (no harden-runner)
 #   - Codecov: os: linux-arm64 (required for self-hosted ARM64)
 #
 # CUSTOMIZE: Search for "# CUSTOMIZE:" comments and adjust for your repo.
@@ -42,12 +44,12 @@ permissions:
 
 jobs:
   # ============================================================================
-  # PR Title Check (ubuntu-latest, harden-runner)
+  # Common CI Jobs (GitHub-hosted, ubuntu-latest)
   # ============================================================================
   pr-title-check:
     name: PR Title Check
     if: >-
-      github.event_name == 'pull_request_target'
+      github.event_name == 'pull_request'
       && github.event.sender.type != 'Bot'
     runs-on: ubuntu-latest
     permissions:
@@ -77,7 +79,7 @@ jobs:
           echo "Auto-fixed: $title -> $new_title"
 
   # ============================================================================
-  # Semgrep SAST (ubuntu-latest, harden-runner)
+  # Semgrep SAST (ubuntu-latest, container)
   # ============================================================================
   semgrep:
     name: Semgrep SAST Scan
@@ -93,8 +95,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       # CUSTOMIZE: Add --exclude-rule flags if needed
-      # Example: semgrep ci --config auto --error --verbose --exclude-rule trailofbits.go.string-to-int-signedness-cast.string-to-int-signedness-cast
-      - run: semgrep ci --config auto --error --verbose
+      # Example: semgrep scan --config auto --error --verbose --exclude-rule trailofbits.go.string-to-int-signedness-cast.string-to-int-signedness-cast
+      - run: semgrep scan --config auto --error --verbose
 
   # ============================================================================
   # Qodo AI Code Review (ubuntu-latest)
@@ -106,7 +108,7 @@ jobs:
         github.event_name == 'issue_comment'
         && github.event.sender.type != 'Bot'
       ) || (
-        github.event_name == 'pull_request_target'
+        github.event_name == 'pull_request'
         && github.event.sender.type != 'Bot'
         && github.event.pull_request.user.login != 'n24q02m'
       )
@@ -140,17 +142,15 @@ jobs:
           GITHUB_ACTION_CONFIG__AUTO_REVIEW: "true"
           GITHUB_ACTION_CONFIG__AUTO_DESCRIBE: "true"
           GITHUB_ACTION_CONFIG__AUTO_IMPROVE: "true"
-          GITHUB_ACTION_CONFIG__HANDLE_PR_ACTIONS: '["opened", "reopened", "ready_for_review", "synchronize"]'
 
   # ============================================================================
   # Dependency Review (ubuntu-latest, harden-runner)
-  # Private repos need continue-on-error: true (GitHub Advanced Security required)
+  # Private repos need continue-on-error at step level (GitHub Advanced Security required)
   # ============================================================================
   dependency-review:
     name: Dependency Review
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@v2
@@ -164,6 +164,7 @@ jobs:
           comment-summary-in-pr: always
           # CUSTOMIZE: Add allow-ghsas if needed
           # allow-ghsas: GHSA-xxxx-xxxx-xxxx
+        continue-on-error: true
 
   # ============================================================================
   # Email Notification (ubuntu-latest, harden-runner)
@@ -171,7 +172,7 @@ jobs:
   email-notify:
     name: Email Notification
     if: >-
-      (github.event_name == 'issues' || github.event_name == 'pull_request_target')
+      (github.event_name == 'issues' || github.event_name == 'pull_request')
       && github.actor != 'n24q02m'
       && github.event.sender.type != 'Bot'
     runs-on: ubuntu-latest
@@ -182,7 +183,7 @@ jobs:
           egress-policy: audit
 
       - name: Send email notification
-        uses: dawidd6/action-send-mail@v15
+        uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
           server_port: 587
