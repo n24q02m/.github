@@ -19,14 +19,64 @@ Reference for common jobs shared across all repos. Every job is inlined in ci.ym
 - **Config**: `semgrep scan --config auto --error --verbose`
 - **Customization**: `--exclude-rule <rule-id>` for false positives (e.g., Go signedness cast)
 
-### Qodo AI Code Review
+### CodeRabbit AI Code Review (public repos)
 
-- **Trigger**: `issue_comment` (non-bot) OR `pull_request` (private repos) / `pull_request_target` (public repos) (non-bot, non-owner)
+- **Integration**: GitHub App (not GitHub Actions) — install at https://coderabbit.ai
+- **Config**: `.coderabbit.yaml` at repo root (see template below)
+- **Trigger**: Automatic on PR open/update and issue open (via CodeRabbit webhook)
+- **Secrets**: None required — OSS tier free for public repos
+- **Reviews**: External contributors only (owner + bots excluded via `ignore_usernames`)
+- **Issue enrichment**: Enabled — auto-generates coding plans from issues
+- **Chat**: Disabled (`auto_reply: false`) — no `@coderabbitai` mentions
+
+`.coderabbit.yaml` template:
+```yaml
+language: "en-US"
+reviews:
+  auto_review:
+    enabled: true
+    drafts: false
+    ignore_usernames:
+      - "n24q02m"
+      - "dependabot[bot]"
+      - "renovate[bot]"
+      - "github-actions[bot]"
+      - "devin-ai-integration[bot]"
+      - "google-labs-jules[bot]"
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  auto_incremental_review: true
+issue_enrichment:
+  auto_enrich:
+    enabled: true
+  planning:
+    enabled: true
+chat:
+  auto_reply: false
+```
+
+### Qodo AI Code Review (private repos only)
+
+- **Trigger**: `issue_comment` (non-bot, non-owner) OR `pull_request` (non-bot, non-owner)
 - **Runner**: `ubuntu-latest`
-- **Permissions**: `issues: write`, `pull-requests: write`, `contents: read`
+- **Permissions**: `issues: write`, `pull-requests: write`, `contents: read`, `id-token: write`
+- **Auth**: Vertex AI via WIF (`google-github-actions/auth@v3` + `VERTEX_WIF_PROVIDER`, `VERTEX_SERVICE_ACCOUNT`)
 - **Config**: Auto review + describe + improve. Custom instructions from `.github/best_practices.md`.
-- **Secrets**: `GEMINI_API_KEY`
-- **Note**: `HANDLE_PR_ACTIONS` removed for private repos (not needed). Public repos keep it for `pull_request_target` filtering.
+- **Vars**: `VERTEX_WIF_PROVIDER`, `VERTEX_SERVICE_ACCOUNT`, `VERTEX_PROJECT` (repo vars, not secrets)
+- **`if:` condition** (both branches must filter bot AND owner):
+  ```yaml
+  if: >-
+    (
+      github.event_name == 'issue_comment'
+      && github.event.sender.type != 'Bot'
+      && github.event.sender.login != 'n24q02m'
+    ) || (
+      github.event_name == 'pull_request'
+      && github.event.sender.type != 'Bot'
+      && github.event.pull_request.user.login != 'n24q02m'
+    )
+  ```
 
 ### Dependency Review
 
@@ -93,18 +143,22 @@ Reference for common jobs shared across all repos. Every job is inlined in ci.ym
 | PR event trigger | `pull_request` | `pull_request_target` (fork PR secrets) |
 | Semgrep | Container job, no harden-runner | Container job, no harden-runner |
 | Email action | `action-send-mail@v3` | `action-send-mail@v15` |
+| Code review | Qodo (GitHub Actions + WIF) | CodeRabbit (GitHub App, OSS free) |
+| `issue_comment` trigger | Yes (for Qodo) | No (CodeRabbit uses webhook) |
 
 ## Secrets Required
 
-| Secret | Purpose | Source |
-|--------|---------|-------|
-| `GH_PAT` | PSR bypass branch rulesets | GitHub PAT (admin) |
-| `GEMINI_API_KEY` | Qodo AI review | Infisical |
-| `CODECOV_TOKEN` | Coverage upload | Infisical |
-| `SMTP_USERNAME` | Email notification | Infisical |
-| `SMTP_PASSWORD` | Email notification | Infisical |
-| `NOTIFY_EMAIL` | Email recipient | Infisical |
-| `DOCKERHUB_USERNAME` | Docker push | Infisical |
-| `DOCKERHUB_TOKEN` | Docker push | Infisical |
-| `NPM_TOKEN` | npm publish | Infisical |
-| `PYPI_TOKEN` | PyPI publish | Infisical |
+| Secret/Var | Purpose | Source | Scope |
+|------------|---------|--------|-------|
+| `GH_PAT` | PSR bypass branch rulesets | GitHub PAT (admin) | All |
+| `CODECOV_TOKEN` | Coverage upload | Infisical | All |
+| `SMTP_USERNAME` | Email notification | Infisical | All |
+| `SMTP_PASSWORD` | Email notification | Infisical | All |
+| `NOTIFY_EMAIL` | Email recipient | Infisical | All |
+| `DOCKERHUB_USERNAME` | Docker push | Infisical | Public |
+| `DOCKERHUB_TOKEN` | Docker push | Infisical | Public |
+| `NPM_TOKEN` | npm publish | Infisical | Public |
+| `PYPI_TOKEN` | PyPI publish | Infisical | Public |
+| `VERTEX_WIF_PROVIDER` | Qodo WIF auth | Repo var | Private only |
+| `VERTEX_SERVICE_ACCOUNT` | Qodo WIF auth | Repo var | Private only |
+| `VERTEX_PROJECT` | Qodo Vertex AI project | Repo var | Private only |

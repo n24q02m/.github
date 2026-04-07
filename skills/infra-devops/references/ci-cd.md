@@ -23,13 +23,12 @@
 ### Private Repo (Self-hosted ARM64)
 
 > **Áp dụng cho**: Aiora, KnowledgePrism, QuikShipping (private monorepos trên OCI VM2).
-> **`pull_request_target`**: CẦN cho Qodo/email/pr-title vì jobs này cần secrets (`GEMINI_API_KEY`, `SMTP_*`). `pull_request` từ fork không có secrets.
 
 | Job | Runner | harden-runner | Ghi chú |
 |-----|--------|---------------|---------|
 | PR title check | `ubuntu-latest` | YES | Auto-fix bot titles. Trigger: `pull_request` |
 | Semgrep SAST | `ubuntu-latest` (container) | **NO** (container job không tương thích) | Thay thế CodeQL cho private repos. `--exclude-rule` cho false positives |
-| Qodo AI review | `ubuntu-latest` | NO | Trigger: `pull_request`. Chỉ review PR của người khác |
+| Qodo AI review | `ubuntu-latest` | NO | Trigger: `pull_request` + `issue_comment`. Skip owner + bots. Auth: WIF → Vertex AI |
 | Dependency review | `ubuntu-latest` | YES | `continue-on-error: true` ở **step level** (private repos cần vì không có GitHub Advanced Security) |
 | Email notify | `ubuntu-latest` | YES | Trigger: `pull_request`. Skip owner + bots |
 | Lint/Test/Build | `[self-hosted, linux, arm64]` | **NO** | **KHÔNG** dùng harden-runner trên self-hosted |
@@ -410,7 +409,38 @@ Add any other context or screenshots about the feature request here.
         run: semgrep scan --config auto --error --verbose
 ```
 
-### AI PR Review (Qodo Merge)
+### AI PR Review
+
+**Public repos**: Dùng **CodeRabbit GitHub App** — không cần job trong CI. Cấu hình qua `.coderabbit.yaml` ở root repo.
+
+```yaml
+# .coderabbit.yaml
+language: "en-US"
+reviews:
+  auto_review:
+    enabled: true
+    drafts: false
+    ignore_usernames:
+      - "n24q02m"
+      - "dependabot[bot]"
+      - "renovate[bot]"
+      - "github-actions[bot]"
+      - "devin-ai-integration[bot]"
+      - "google-labs-jules[bot]"
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  auto_incremental_review: true
+issue_enrichment:
+  auto_enrich:
+    enabled: true
+  planning:
+    enabled: true
+chat:
+  auto_reply: false
+```
+
+**Private repos**: Dùng **Qodo Merge (qodo-ai/pr-agent)** qua GitHub Actions + Vertex AI WIF.
 
 ```yaml
   ai_pr_review:
@@ -419,6 +449,7 @@ Add any other context or screenshots about the feature request here.
       (
         github.event_name == 'issue_comment'
         && github.event.sender.type != 'Bot'
+        && github.event.sender.login != 'n24q02m'
       ) || (
         github.event_name == 'pull_request'
         && github.event.sender.type != 'Bot'
@@ -429,6 +460,7 @@ Add any other context or screenshots about the feature request here.
       issues: write
       pull-requests: write
       contents: read
+      id-token: write
 
     steps:
       - name: Checkout repo
@@ -444,23 +476,29 @@ Add any other context or screenshots about the feature request here.
             echo "$RANDOM_EOF" >> "$GITHUB_ENV"
           fi
 
+      - name: Authenticate to GCP (Vertex AI)
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.VERTEX_WIF_PROVIDER }}
+          service_account: ${{ vars.VERTEX_SERVICE_ACCOUNT }}
+
       - name: PR Agent action step
         uses: qodo-ai/pr-agent@main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          VERTEXAI_PROJECT: ${{ vars.VERTEX_PROJECT }}
+          VERTEXAI_LOCATION: global
           PR_REVIEWER__EXTRA_INSTRUCTIONS: ${{ env.CUSTOM_INSTRUCTIONS }}
           PR_CODE_SUGGESTIONS__EXTRA_INSTRUCTIONS: ${{ env.CUSTOM_INSTRUCTIONS }}
           PR_DESCRIPTION__EXTRA_INSTRUCTIONS: ${{ env.CUSTOM_INSTRUCTIONS }}
           GITHUB_ACTION_CONFIG__AUTO_REVIEW: "true"
           GITHUB_ACTION_CONFIG__AUTO_DESCRIBE: "true"
           GITHUB_ACTION_CONFIG__AUTO_IMPROVE: "true"
+          GITHUB_ACTION_CONFIG__HANDLE_PR_ACTIONS: '["opened", "reopened", "ready_for_review", "synchronize"]'
 ```
 
-> **Bot filtering**: 3 lop bao ve:
-> 1. **CI level (issue_comment)**: `github.event.sender.type != 'Bot'` — chan bots khoi trigger qua comments
-> 2. **CI level (pull_request)**: `github.event.sender.type != 'Bot'` + `github.event.pull_request.user.login != 'n24q02m'` — skip AI review cho PRs cua chinh minh (tiet kiem runner minutes, chi review PRs cua nguoi khac/bots)
-> 3. **Qodo level**: `.pr_agent.toml` voi `ignore_pr_authors = ["^(?!n24q02m$)"]` — negative lookahead chi cho phep PR tu `n24q02m`, chan bot co `sender.type == 'User'` (vd: Jules)
+> **if: condition**: Cả 2 nhánh (`issue_comment` và `pull_request`) đều phải filter bot VÀ owner. `issue_comment` dùng `sender.login`, `pull_request` dùng `pull_request.user.login`.
+> **Auth**: Vertex AI qua WIF — không cần `GEMINI_API_KEY`. Vars `VERTEX_WIF_PROVIDER`, `VERTEX_SERVICE_ACCOUNT`, `VERTEX_PROJECT` là repo vars (không phải secrets).
 
 ---
 
