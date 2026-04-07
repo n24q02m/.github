@@ -20,8 +20,7 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
-  issue_comment:
-    types: [created, edited]
+  # issue_comment trigger removed: CodeRabbit uses its own webhook, not GitHub Actions
   issues:
     types: [opened, reopened]
 
@@ -139,46 +138,8 @@ jobs:
   # ============================================================================
   # Qodo AI Code Review
   # ============================================================================
-  ai_pr_review:
-    name: Qodo AI Code Review
-    if: >-
-      (
-        github.event_name == 'issue_comment'
-        && github.event.sender.type != 'Bot'
-      ) || (
-        github.event_name == 'pull_request_target'
-        && github.event.sender.type != 'Bot'
-        && github.event.pull_request.user.login != 'n24q02m'
-      )
-    runs-on: ubuntu-latest
-    permissions:
-      issues: write
-      pull-requests: write
-      contents: read
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Load custom instructions
-        run: |
-          if [ -f ".github/best_practices.md" ]; then
-            INSTRUCTIONS=$(cat .github/best_practices.md)
-            RANDOM_EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
-            echo "CUSTOM_INSTRUCTIONS<<$RANDOM_EOF" >> "$GITHUB_ENV"
-            echo "$INSTRUCTIONS" >> "$GITHUB_ENV"
-            echo "$RANDOM_EOF" >> "$GITHUB_ENV"
-          fi
-
-      - uses: qodo-ai/pr-agent@main
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          PR_REVIEWER__EXTRA_INSTRUCTIONS: ${{ env.CUSTOM_INSTRUCTIONS }}
-          PR_CODE_SUGGESTIONS__EXTRA_INSTRUCTIONS: ${{ env.CUSTOM_INSTRUCTIONS }}
-          PR_DESCRIPTION__EXTRA_INSTRUCTIONS: ${{ env.CUSTOM_INSTRUCTIONS }}
-          GITHUB_ACTION_CONFIG__AUTO_REVIEW: "true"
-          GITHUB_ACTION_CONFIG__AUTO_DESCRIBE: "true"
-          GITHUB_ACTION_CONFIG__AUTO_IMPROVE: "true"
-          GITHUB_ACTION_CONFIG__HANDLE_PR_ACTIONS: '["opened", "reopened", "ready_for_review", "synchronize"]'
+  # Code review: CodeRabbit GitHub App — configure via .coderabbit.yaml at repo root
+  # (replaces Qodo/pr-agent; no GitHub Actions job needed)
 
   # ============================================================================
   # Email Notification
