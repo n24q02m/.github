@@ -60,9 +60,7 @@
       "depNameTemplate": "n24q02m/better-semantic-release",
       "datasourceTemplate": "git-refs",
       "packageNameTemplate": "https://github.com/n24q02m/better-semantic-release",
-      "versioningTemplate": "semver",
-      "semanticCommitType": "fix",
-      "commitMessageExtra": "(pin BSR action stable)"
+      "versioningTemplate": "semver"
     }
   ]
 }
