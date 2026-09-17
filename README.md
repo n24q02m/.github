@@ -7,4 +7,4 @@ Community-health defaults for [@n24q02m](https://github.com/n24q02m)'s repositor
 ## Conventions
 
 - Every product repo carries exactly two workflows: `.github/workflows/ci.yml` (PR/push checks) and `.github/workflows/cd.yml` (release/deploy/scheduled jobs). No additional workflow files.
-- Unified documentation hub: [docs.n24q02m.com](https://mcp.n24q02m.com) — MCP servers under `/servers/`, tools under `/tools/`, skret under `/skret/`.
+- Unified documentation hub: [mcp.n24q02m.com](https://mcp.n24q02m.com) — MCP servers under `/servers/`, tools under `/tools/`, skret under `/skret/`.
