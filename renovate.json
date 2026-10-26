@@ -10,7 +10,7 @@
   "timezone": "Asia/Ho_Chi_Minh",
   "enabledManagers": [
     "github-actions",
-    "regex"
+    "custom.regex"
   ],
   "prConcurrentLimit": 2,
   "prHourlyLimit": 1,
@@ -51,8 +51,8 @@
   "customManagers": [
     {
       "customType": "regex",
-      "fileMatch": [
-        "\\.github/workflows/[^/]+\\.ya?ml$"
+      "managerFilePatterns": [
+        "/\\.github/workflows/[^/]+\\.ya?ml$/"
       ],
       "matchStrings": [
         "uses:\\s*n24q02m/better-semantic-release@(?<currentDigest>[0-9a-f]{40})\\s*#\\s*(?<currentValue>v\\d+\\.\\d+\\.\\d+)"
