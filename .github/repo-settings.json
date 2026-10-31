@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "tier": 2,
+  "description": "Community health files and shared workflows",
+  "homepage": "",
+  "topics": [
+    "github-actions",
+    "community-health",
+    "dotgithub"
+  ]
+}

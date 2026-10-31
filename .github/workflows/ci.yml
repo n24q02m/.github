@@ -1,4 +1,4 @@
-name: CodeQL
+name: CI
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ format('codeql-{0}-{1}-{2}', github.workflow, github.event_name, github.event.pull_request.number || github.ref) }}
+  group: ${{ format('ci-{0}-{1}-{2}', github.workflow, github.event_name, github.event.pull_request.number || github.ref) }}
   cancel-in-progress: true
 
 jobs:
