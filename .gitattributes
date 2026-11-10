@@ -1,0 +1,8 @@
+# Executed by bash: a CRLF checkout makes every hook unrunnable.
+*.sh text eol=lf
+# Read by the Linux runners that gate this repo.
+*.py text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
