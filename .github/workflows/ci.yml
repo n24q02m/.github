@@ -31,3 +31,92 @@ jobs:
           languages: actions
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+
+  actionlint:
+    name: actionlint (workflows)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install actionlint 1.7.12
+        # A release tag can be moved, so the archive digest is what this job
+        # trusts. Same pinning shape as the fleet's other repos.
+        env:
+          VERSION: 1.7.12
+          SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          url="https://github.com/rhysd/actionlint/releases/download/v${VERSION}/actionlint_${VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo actionlint.tar.gz "$url"
+          actual="$(sha256sum actionlint.tar.gz | cut -d' ' -f1)"
+          if [ "$actual" != "$SHA256" ]; then
+            echo "::error::actionlint ${VERSION} archive checksum is ${actual}, expected ${SHA256}"
+            exit 1
+          fi
+          tar -xzf actionlint.tar.gz actionlint
+      - name: Lint .github/workflows
+        # No file arguments: every workflow is linted, including this one. The
+        # runner ships shellcheck, so the shell inside `run:` blocks is checked
+        # too, which is how a broken step here gets caught before it runs.
+        run: ./actionlint -color
+
+  config:
+    name: config (JSON, skret, templates)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate shipped config artifacts
+        # Stdlib only on purpose: the check must not need a dependency the repo
+        # does not pin (see the module docstring for what each check covers).
+        run: |
+          python3 --version
+          python3 scripts/validate_config.py --root .
+
+  scripts:
+    name: scripts (shellcheck, py_compile)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install shellcheck 0.11.0
+        env:
+          VERSION: 0.11.0
+          SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+        run: |
+          url="https://github.com/koalaman/shellcheck/releases/download/v${VERSION}/shellcheck-v${VERSION}.linux.x86_64.tar.xz"
+          curl -fsSLo shellcheck.tar.xz "$url"
+          actual="$(sha256sum shellcheck.tar.xz | cut -d' ' -f1)"
+          if [ "$actual" != "$SHA256" ]; then
+            echo "::error::shellcheck ${VERSION} archive checksum is ${actual}, expected ${SHA256}"
+            exit 1
+          fi
+          tar -xJf shellcheck.tar.xz --strip-components=1 "shellcheck-v${VERSION}/shellcheck"
+      - name: shellcheck every tracked shell script
+        # Hooks are only useful while they parse; -S warning is the level that
+        # fails on real defects without re-litigating style choices.
+        run: |
+          mapfile -t files < <(git ls-files '*.sh')
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::no tracked *.sh file found, this job would pass vacuously"
+            exit 1
+          fi
+          printf '%s\n' "${files[@]}"
+          ./shellcheck -S warning "${files[@]}"
+      - name: Compile every tracked python file
+        run: |
+          mapfile -t files < <(git ls-files '*.py')
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::no tracked *.py file found, this job would pass vacuously"
+            exit 1
+          fi
+          printf '%s\n' "${files[@]}"
+          python3 -m py_compile "${files[@]}"
